@@ -168,7 +168,7 @@ def _enviar_digest_diario(perfil: Perfil):
     if not (horario_certo or atrasado):
         return
 
-    vagas_pendentes = obter_vagas_pendentes_digest(perfil.chave)
+    vagas_pendentes = obter_vagas_pendentes_digest(perfil.chave, regras=perfil.regras)
     if not vagas_pendentes:
         # Marca mesmo sem vaga nenhuma — senão o "atrasado" acima dispara
         # todo ciclo seguinte até aparecer alguma vaga pendente de novo.
@@ -395,15 +395,14 @@ def _rodar_um_ciclo_de_cada(perfis: list[Perfil]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="JobRadar - monitor de vagas")
+    parser = argparse.ArgumentParser(description="JobRadar - estágios no Brasil")
     parser.add_argument(
         "--perfil",
-        required=True,
+        default=["brasil"],
         nargs="+",
         choices=sorted(PERFIS.keys()),
         help=(
-            "Qual(is) mercado(s) rodar nesta execução — 'brasil', 'internacional', "
-            "ou os dois (--perfil brasil internacional)."
+            "Perfil de busca: brasil (padrão), para estágios em exatas, fintech e tecnologia."
         ),
     )
     parser.add_argument(

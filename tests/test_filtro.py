@@ -22,8 +22,17 @@ virar asserção, não deduzido lendo o comentário.
 
 import pytest
 
-from job import Job, extrair_escopo_remoto
-from perfis import PERFIL_BR, PERFIL_INTL
+from job import Job, RegrasFiltro, extrair_escopo_remoto
+from perfis import PERFIL_BR
+
+
+# Exercita a regra genérica de idioma sem reativar um perfil de busca.
+REGRAS_IDIOMA = RegrasFiltro(
+    keywords_forte=["Data Analyst"], keywords_ambiguo=[],
+    qualificadores_dados=[], ferramentas_titulo=[], qualificadores_cargo=[],
+    cidades=["Remoto"], mercados_remoto_aceitos=["LATAM", "Espanha"],
+    idiomas_exigidos=["spanish", "portuguese", "latam"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -137,46 +146,43 @@ CASOS_COMBINA_COM = [
     # Anti-regressão crítica (mesmo caso do teste de escopo, agora
     # end-to-end): vaga americana sem sigla de estado tem que ser barrada
     # no perfil internacional (que só aceita LATAM/Ibéria).
-    ("seattle-barrada-perfil-intl", "Senior Data Analyst", "Greater Seattle Area", "Remoto", PERFIL_INTL, False),
+    ("seattle-barrada-regra-idioma", "Senior Data Analyst", "Greater Seattle Area", "Remoto", REGRAS_IDIOMA, False),
     # Remota sem mercado declarado: só passa se o TÍTULO afirmar idioma/
     # região (spanish/portuguese/latam/...) — regra adicionada depois que
     # "Senior Data Analyst" remoto sem relação nenhuma com o mercado
     # passava só por não ter nada que a rejeitasse.
-    ("spanish-speaking-sem-mercado-passa", "Spanish Speaking Data Analyst", "Remote", "Remoto", PERFIL_INTL, True),
-    ("data-analyst-latam-passa", "Data Analyst LATAM", "Remote", "Remoto", PERFIL_INTL, True),
-    ("sem-idioma-sem-mercado-barrada", "Senior Data Analyst", "Remote", "Remoto", PERFIL_INTL, False),
+    ("spanish-speaking-sem-mercado-passa", "Spanish Speaking Data Analyst", "Remote", "Remoto", REGRAS_IDIOMA, True),
+    ("data-analyst-latam-passa", "Data Analyst LATAM", "Remote", "Remoto", REGRAS_IDIOMA, True),
+    ("sem-idioma-sem-mercado-barrada", "Senior Data Analyst", "Remote", "Remoto", REGRAS_IDIOMA, False),
     # Mercado CONFIRMADO no texto dispensa o sinal de idioma no título — o
     # país hispanofalante já é o próprio sinal.
-    ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
+    ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", REGRAS_IDIOMA, True),
 
     # Perfil Brasil: cargo e cidade são checados em campos separados
     # (título vs. local) — cidade fora da lista aceita barra mesmo com
     # cargo batendo.
-    ("cidade-fora-da-lista-barrada", "QA Engineer", "Nova York", "Presencial", PERFIL_BR, False),
-    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-forte-cidade-aceita-passa", "QA Engineer Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
+    ("cidade-estrangeira-barrada", "Estágio em QA", "Nova York", "Presencial", PERFIL_BR.regras, False),
+    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
+    ("estagio-cidade-brasileira-passa", "Estágio em QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
     # keywords_ambiguo (ex: "Analista de Qualidade") só conta com qualificador
     # de dados junto no título — sozinho é ruído de outra área (RH,
     # finanças).
-    ("cargo-ambiguo-sem-qualificador-barrado", "Analista de Qualidade", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Analista de Qualidade com QA", "Recife, PE", "Presencial", PERFIL_BR, True),
+    ("cargo-ambiguo-sem-qualificador-barrado", "Estágio", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
+    ("cargo-ambiguo-com-qualificador-passa", "Estagiária de QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
 ]
 
 
 @pytest.mark.parametrize(
-    "nome,titulo,local,modalidade,perfil,esperado",
+    "nome,titulo,local,modalidade,regras,esperado",
     CASOS_COMBINA_COM,
     ids=[c[0] for c in CASOS_COMBINA_COM],
 )
-def test_combina_com(nome, titulo, local, modalidade, perfil, esperado):
-    if nome in ["cargo-forte-cidade-aceita-passa", "cargo-ambiguo-com-qualificador-passa"]:
-        pytest.skip("Ignorado a pedido do usuario")
-        
+def test_combina_com(nome, titulo, local, modalidade, regras, esperado):
     job = Job(
         titulo=titulo, empresa="Teste", local=local, link=f"https://teste.invalido/{nome}",
         site="Teste", modalidade=modalidade,
     )
-    assert job.combina_com(perfil.regras) == esperado
+    assert job.combina_com(regras) == esperado
 
 
 # ---------------------------------------------------------------------------

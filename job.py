@@ -619,11 +619,11 @@ def extrair_data_publicacao(texto_card: str) -> str:
     return ""
 
 
-# Ordem importa: do mais específico pro mais genérico. Título não é
-# filtrado por senioridade — só é classificado, pra decidir isso na hora de
-# ler a notificação, não em deixar a vaga passar ou não.
+# Ordem importa: estágio e trainee são níveis distintos. O perfil pode
+# exigir estágio; os demais níveis continuam disponíveis para classificação.
 _NIVEIS_SENIORIDADE = [
-    ("Estágio/Trainee", (r"estagi[ao]", r"estagio", r"trainee")),
+    ("Estágio", (r"estagios?", r"estagiari[ao]s?", r"interns?", r"internships?")),
+    ("Trainee", (r"trainee",)),
     ("Júnior", (r"junior", r"jr\.?")),
     ("Pleno", (r"pleno", r"pl\.?")),
     ("Sênior", (r"senior", r"sr\.?", r"sênior")),
@@ -633,11 +633,8 @@ _NIVEIS_SENIORIDADE = [
 
 
 def _detectar_senioridade(titulo: str) -> str:
-    """Classifica o nível pelo título, sem excluir nada — a ideia é decidir
-    na hora de ler a notificação se vale a pena abrir o link, não descartar
-    vaga automaticamente (júnior pode virar sênior lendo a descrição, e
-    "PL"/"Sr" no título nem sempre reflete o que a empresa pede de verdade).
-    """
+    """Classifica o nível do título. A regra exigir_estagio usa este
+    resultado para impedir que outros níveis sejam aprovados."""
     titulo_norm = _normalizar(titulo)
 
     for nivel, padroes in _NIVEIS_SENIORIDADE:
@@ -697,6 +694,8 @@ class RegrasFiltro:
     # mercado hispanofalante-lusófono explicitamente. None = não checa
     # (BR não precisa — fonte já é 100% brasileira/portuguesa).
     idiomas_exigidos: list[str] | None = None
+    exigir_estagio: bool = False
+    aceitar_todo_brasil: bool = False
 
 
 @dataclass
@@ -854,8 +853,7 @@ class Job:
     def senioridade(self) -> str:
         """Nível classificado a partir do título (Júnior/Pleno/Sênior/...).
 
-        Isso é só informativo pra notificação — a vaga não é excluída por
-        senioridade em nenhum momento do filtro.
+        Também valida o nível quando RegrasFiltro.exigir_estagio está ativo.
         """
         return _detectar_senioridade(self.titulo)
 
@@ -949,12 +947,47 @@ class Job:
         local_norm = _normalizar(self.local)
         modalidade_norm = _normalizar(self.modalidade)
 
+        if regras.aceitar_todo_brasil:
+            local_geografico = re.sub(
+                r"\s*[-/–—]\s*([a-z]{2})(?=\s*(?:[,)]|$))",
+                r", \1", local_norm,
+            )
+            mercados_locais = extrair_escopo_remoto(local_geografico, "Remoto")
+            # Um país declarado por extenso prevalece sobre uma UF que
+            # possa colidir com estado estrangeiro.
+            mercados_declarados = {
+                mercado for termo, mercado in _MERCADOS_REMOTO.items()
+                if _contem_termo(termo, local_norm)
+            }
+            if mercados_declarados:
+                mercados_locais = mercados_declarados
+            elif any(_contem_termo(termo, local_norm) for termo in (
+                "worldwide", "anywhere", "global", "mundial", "todo o mundo",
+            )):
+                mercados_locais = {"Global"}
+            cidade_conhecida = any(
+                _normalizar(c) == local_norm
+                for c in regras.cidades
+                if _normalizar(c) not in ("remoto", "remota", "remote")
+            )
+            if cidade_conhecida:
+                mercados_locais = {"Brasil"}
+            segmentos_geograficos = [s.strip(" ()") for s in local_geografico.split(",")]
+            if (
+                len(segmentos_geograficos) >= 3
+                and segmentos_geograficos[-2] in _SIGLAS_UF_BRASIL
+                and segmentos_geograficos[-1] not in ("brasil", "brazil", "br")
+            ):
+                # Não inferir Brasil só pela UF quando há outro país,
+                # inclusive um país ainda não cadastrado no dicionário.
+                mercados_locais = {segmentos_geograficos[-1]}
+
         bate_forte = any(
             _contem_termo(_normalizar(k), titulo_norm) for k in regras.keywords_forte
         )
 
         bate_ambiguo = any(
-            _normalizar(k) in titulo_norm for k in regras.keywords_ambiguo
+            _contem_termo(_normalizar(k), titulo_norm) for k in regras.keywords_ambiguo
         ) and any(
             _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
             for q in regras.qualificadores_dados
@@ -962,13 +995,15 @@ class Job:
 
         # Espelho da regra acima: ferramenta no título só vale com cargo junto.
         bate_ferramenta = any(
-            _normalizar(f) in titulo_norm for f in regras.ferramentas_titulo
+            _contem_termo(_normalizar(f), titulo_norm) for f in regras.ferramentas_titulo
         ) and any(
             _contem_termo(_normalizar(q), titulo_norm, aceitar_plural=True)
             for q in regras.qualificadores_cargo
         )
 
         bate_keyword = bate_forte or bate_ambiguo or bate_ferramenta
+        if regras.exigir_estagio:
+            bate_keyword = bate_keyword and self.senioridade == "Estágio"
 
         # Antes: _e_remoto(local_norm), redetectando por substring dentro de
         # `local` toda vez que combina_com() rodava (inclusive mais de uma
@@ -990,10 +1025,14 @@ class Job:
         _FLAGS_REMOTO = ("remoto", "remota", "remote")
         quer_remoto = any(_normalizar(c) in _FLAGS_REMOTO for c in regras.cidades)
         bate_remoto = quer_remoto and modalidade_norm in ("remoto", "remota")
+        if regras.aceitar_todo_brasil and not modalidade_norm and _e_remoto(local_norm):
+            bate_remoto = quer_remoto
 
         # Calculado uma vez só e reaproveitado nos dois gates abaixo
         # (mercado aceito e idioma exigido) — os dois leem o mesmo escopo.
         escopos = self.escopo_remoto if bate_remoto else set()
+        if bate_remoto and regras.aceitar_todo_brasil:
+            escopos = mercados_locais
 
         # MEDIDO: "Remote — US only", "Remote — India", "Remote — Portugal" e
         # "Remote — Brazil only" passavam todos igual, porque até aqui só
@@ -1057,6 +1096,15 @@ class Job:
             if _normalizar(c) not in _FLAGS_REMOTO
         )
 
+        if regras.aceitar_todo_brasil:
+            if modalidade_norm in ("remoto", "remota") or (not modalidade_norm and _e_remoto(local_norm)):
+                # Nenhuma cidade deve permitir contornar o gate de mercado.
+                bate_cidade = bate_remoto and (
+                    not mercados_locais or "Brasil" in mercados_locais or cidade_conhecida
+                )
+            else:
+                bate_cidade = "Brasil" in mercados_locais or cidade_conhecida
+
         return _Avaliacao(
             aprovada=bate_keyword and bate_cidade,
             bate_forte=bate_forte,
@@ -1078,7 +1126,8 @@ class Job:
           ambíguo+qualificador, 0 se só bateu por ferramenta (sem cargo
           nenhum no título).
         - Ferramenta no título (Power BI, SQL, Python...): 2.
-        - Senioridade: Júnior/Pleno (prioridade do usuário) = +2; título
+        - Senioridade: Estágio = +2 quando exigir_estagio está ativo;
+          em regras genéricas, Júnior/Pleno = +2; título
           sem nível classificável = +1 (não penaliza por falta de
           informação); Sênior/Especialista/Liderança = -2 (MEDIDO: 25% da
           base é essa faixa, contra 5,5% Júnior/Pleno — 0 ponto pros dois
@@ -1106,7 +1155,9 @@ class Job:
         pontos_ferramenta = _PESO_FERRAMENTA if av.bate_ferramenta else 0
 
         nivel = self.senioridade
-        if nivel in _NIVEIS_SENIORIDADE_ALVO:
+        if regras.exigir_estagio and nivel == "Estágio":
+            pontos_senioridade = _PESO_SENIORIDADE_ALVO
+        elif nivel in _NIVEIS_SENIORIDADE_ALVO:
             pontos_senioridade = _PESO_SENIORIDADE_ALVO
         elif nivel in _NIVEIS_SENIORIDADE_ACIMA_DO_ALVO:
             pontos_senioridade = _PESO_SENIORIDADE_ACIMA_DO_ALVO
@@ -1156,6 +1207,8 @@ class Job:
             motivo = "Cargo ambíguo + qualificador"
         else:
             motivo = "Ferramenta + cargo"
+        if regras.exigir_estagio:
+            motivo = "Estágio · área compatível"
         if av.bate_remoto and not av.escopos and av.idioma_bateu_titulo:
             motivo += " · idioma sem mercado"
         return motivo

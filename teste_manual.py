@@ -43,6 +43,8 @@ def _diagnostico(v, regras):
         return f"APROVADA ({v.relevancia}/10) - {motivo}"
 
     razoes = []
+    if regras.exigir_estagio and v.senioridade != "Estágio":
+        razoes.append("título não indica estágio")
     bate_cargo = av.bate_forte or av.bate_ambiguo or av.bate_ferramenta
     if not bate_cargo:
         razoes.append("cargo não bate (nem forte, nem ambíguo+qualificador, nem ferramenta+cargo)")
@@ -103,7 +105,7 @@ def main():
         "--perfil",
         required=True,
         choices=sorted(PERFIS.keys()),
-        help="Perfil cujas regras de filtro e fontes usar ('brasil' ou 'internacional').",
+        help="Perfil de estágios no Brasil.",
     )
     parser.add_argument(
         "--fonte",
@@ -112,7 +114,7 @@ def main():
     parser.add_argument(
         "--termos",
         nargs="+",
-        help="Termos de busca (substitui os do perfil). Ex: 'analista de dados' 'power bi'.",
+        help="Termos de busca (substitui os do perfil). Ex: 'estágio dados' 'estágio fintech'.",
     )
     args = parser.parse_args()
 

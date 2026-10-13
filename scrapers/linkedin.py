@@ -10,14 +10,15 @@ from scrapers.base import BaseScraper
 
 logger = get_logger()
 
-# Ver comentário equivalente em scrapers/gupy.py: só a 1a página nunca
-# alcançava vaga de cidade menor (Recife, Natal, Maceió etc.) — confirmado
-# ao vivo que vaga real dessas cidades existe mas fica fora do top 10
-# nacional. O LinkedIn pagina via &start= (10 vagas por página).
+# O LinkedIn pagina via &start= (10 vagas por página). Cada cidade é
+# consultada separadamente para não perder Guarulhos entre os resultados
+# de uma busca centrada em São Paulo.
 MAX_PAGINAS = 3
 
-def _url_busca(termo: str, start: int) -> str:
+def _url_busca(termo: str, start: int, localidade: str = "") -> str:
     parametros = {"keywords": termo, "start": start}
+    if localidade:
+        parametros["location"] = localidade
     return (
         "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?"
         + urlencode(parametros)
@@ -34,28 +35,30 @@ class LinkedInScraper(BaseScraper):
     principalmente vindos de IPs de nuvem/datacenter, como os do GitHub
     Actions. Não é possível garantir estabilidade a longo prazo.
 
-    Consulta sem parâmetros de localização ou modalidade. O endpoint guest
-    não respeitou f_WT=2 no teste ao vivo: devolveu os mesmos cards com e
-    sem o parâmetro. O campo `modalidade` só é preenchido quando o próprio
-    texto do local o informa.
+    Consulta cada cidade configurada, sem restringir a modalidade. O endpoint
+    guest pode ignorar filtros ou limitar acessos; o filtro de Job valida o
+    local de cada card antes de enviar qualquer alerta.
     """
 
     def __init__(
         self,
         termos_busca: list[str],
+        localidades: list[str] | None = None,
     ):
         self.termos_busca = termos_busca
+        self.localidades = localidades or [""]
 
     def buscar_vagas(self) -> list[Job]:
         vagas: list[Job] = []
         for termo in self.termos_busca:
-            vagas.extend(self._buscar_termo(termo))
+            for localidade in self.localidades:
+                vagas.extend(self._buscar_termo(termo, localidade))
 
         logger.info(f"[LinkedIn] {len(vagas)} vaga(s) encontrada(s) no total")
         return vagas
 
-    def _buscar_termo(self, termo: str) -> list[Job]:
-        logger.info(f"[LinkedIn] Buscando sem filtro de local: {termo}")
+    def _buscar_termo(self, termo: str, localidade: str) -> list[Job]:
+        logger.info(f"[LinkedIn] Buscando '{termo}' em {localidade or 'todos os locais'}")
         vagas: list[Job] = []
 
         with sync_playwright() as p:
@@ -70,7 +73,7 @@ class LinkedInScraper(BaseScraper):
             try:
                 for pagina in range(MAX_PAGINAS):
                     start = pagina * 10
-                    url = _url_busca(termo, start)
+                    url = _url_busca(termo, start, localidade)
                     page.goto(url, timeout=60000)
                     time.sleep(2)
 

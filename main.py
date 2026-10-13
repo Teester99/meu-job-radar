@@ -385,14 +385,14 @@ def _rodar_um_ciclo_de_cada(perfis: list[Perfil]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="JobRadar - estágios de qualquer área e local")
+    parser = argparse.ArgumentParser(description="JobRadar - estágios em São Paulo e Guarulhos")
     parser.add_argument(
         "--perfil",
         default=["brasil"],
         nargs="+",
         choices=sorted(PERFIS.keys()),
         help=(
-            "Perfil de busca: brasil (chave histórica), para estágios de qualquer área e local."
+            "Perfil de busca: brasil (chave histórica), para estágios em São Paulo e Guarulhos."
         ),
     )
     parser.add_argument(

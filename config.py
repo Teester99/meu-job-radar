@@ -4,7 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# As buscas usam só nível de estágio, sem área ou local preferido.
+# Estágios de qualquer área, nas cidades de São Paulo e Guarulhos.
+CIDADES_ALVO = ["São Paulo", "Guarulhos"]
+LOCALIDADES_BUSCA = ["São Paulo, SP, Brasil", "Guarulhos, SP, Brasil"]
 MARCADORES_ESTAGIO = [
     "estágio", "estágios", "estagiário", "estagiária",
     "estagiários", "estagiárias", "intern", "interns", "internship", "internships",

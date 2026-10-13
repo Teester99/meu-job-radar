@@ -16,6 +16,13 @@ logger = get_logger()
 MAX_PAGINAS = 3
 
 
+def _url_busca(termo: str, localidade: str, start: int) -> str:
+    return (
+        f"https://br.indeed.com/jobs?q={quote_plus(termo)}"
+        f"&l={quote_plus(localidade)}&start={start}"
+    )
+
+
 class IndeedScraper(BaseScraper):
     """Busca vagas no https://br.indeed.com.
 
@@ -25,25 +32,22 @@ class IndeedScraper(BaseScraper):
     bloqueio, não erro de seletor.
     """
 
-    def __init__(self, termos_busca: list[str]):
+    def __init__(self, termos_busca: list[str], localidades: list[str] | None = None):
         self.termos_busca = termos_busca
+        self.localidades = localidades or [""]
 
     def buscar_vagas(self) -> list[Job]:
         vagas: list[Job] = []
         for termo in self.termos_busca:
-            vagas.extend(self._buscar_termo(termo))
+            for localidade in self.localidades:
+                vagas.extend(self._buscar_termo(termo, localidade))
 
         logger.info(f"[Indeed] {len(vagas)} vaga(s) encontrada(s) no total")
         return vagas
 
-    def _buscar_termo(self, termo: str) -> list[Job]:
-        logger.info(f"[Indeed] Buscando: {termo}")
+    def _buscar_termo(self, termo: str, localidade: str) -> list[Job]:
+        logger.info(f"[Indeed] Buscando '{termo}' em {localidade or 'todos os locais'}")
         vagas: list[Job] = []
-        # quote_plus em vez de .replace(" ", "+") manual: termo pode ter "&"
-        # (ex: "BI & Analytics Analyst"), que sem escapar quebra a query
-        # string no meio e corrompe a busca silenciosamente.
-        termo_url = quote_plus(termo)
-
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(
@@ -59,7 +63,7 @@ class IndeedScraper(BaseScraper):
             try:
                 for pagina in range(MAX_PAGINAS):
                     start = pagina * 10
-                    url = f"https://br.indeed.com/jobs?q={termo_url}&l=&start={start}"
+                    url = _url_busca(termo, localidade, start)
                     page.goto(url, timeout=60000)
                     try:
                         page.wait_for_selector(".job_seen_beacon", state="attached", timeout=25000)

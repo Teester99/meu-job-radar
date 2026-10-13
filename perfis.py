@@ -1,9 +1,9 @@
-"""Perfil ativo do JobRadar: estágios de qualquer área e local."""
+"""Perfil ativo do JobRadar: estágios em São Paulo e Guarulhos."""
 
 from dataclasses import dataclass, field
 
 from config import (
-    MARCADORES_ESTAGIO, TERMOS_BUSCA, TERMOS_POR_CICLO,
+    CIDADES_ALVO, LOCALIDADES_BUSCA, MARCADORES_ESTAGIO, TERMOS_BUSCA, TERMOS_POR_CICLO,
 )
 from job import RegrasFiltro
 from scrapers.catho import CathoScraper
@@ -44,16 +44,16 @@ class Perfil:
 PERFIL_BR = Perfil(
     # Chave histórica mantida para preservar deduplicação e digest no jobs.db.
     chave="brasil",
-    nome="Estágios",
+    nome="Estágios SP e Guarulhos",
     palavras_monitoradas=MARCADORES_ESTAGIO,
-    paises_pesquisados=None,
+    paises_pesquisados=["Brasil"],
     regras=RegrasFiltro(
         keywords_forte=[],
         keywords_ambiguo=[],
         qualificadores_dados=[],
         ferramentas_titulo=[],
         qualificadores_cargo=[],
-        cidades=[],
+        cidades=CIDADES_ALVO,
         mercados_remoto_aceitos=None,
         exigir_estagio=True,
         apenas_estagio=True,
@@ -65,9 +65,15 @@ PERFIL_BR = Perfil(
     termos_por_ciclo=TERMOS_POR_CICLO,
     definicao_scrapers=[
         DefinicaoScraper(GupyScraper, FREQUENCIA_ALTA),
-        DefinicaoScraper(LinkedInScraper, FREQUENCIA_ALTA),
+        DefinicaoScraper(
+            LinkedInScraper, FREQUENCIA_ALTA,
+            kwargs_extras={"localidades": LOCALIDADES_BUSCA},
+        ),
         DefinicaoScraper(SolidesScraper, FREQUENCIA_ALTA),
-        DefinicaoScraper(IndeedScraper, FREQUENCIA_ALTA),
+        DefinicaoScraper(
+            IndeedScraper, FREQUENCIA_ALTA,
+            kwargs_extras={"localidades": LOCALIDADES_BUSCA},
+        ),
         DefinicaoScraper(CathoScraper, FREQUENCIA_BAIXA),
         DefinicaoScraper(GeekHunterScraper, FREQUENCIA_BAIXA),
         DefinicaoScraper(Jobs99Scraper, FREQUENCIA_BAIXA),

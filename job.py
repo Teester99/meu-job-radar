@@ -645,6 +645,36 @@ def _detectar_senioridade(titulo: str) -> str:
     return "Não especificado"
 
 
+def _local_em_cidades(local: str, cidades: list[str]) -> bool:
+    """Aceita a cidade declarada, sem confundir região, estado ou outro país."""
+    if not cidades:
+        return True
+
+    texto = _normalizar(local).strip()
+    nomes = "|".join(re.escape(_normalizar(cidade)) for cidade in cidades)
+    cidade = re.search(rf"(?<!\w)(?:{nomes})(?!\w)", texto)
+    if cidade is None:
+        return False
+
+    prefixo = texto[:cidade.start()].strip(" ,-/()–—|·")
+    if prefixo not in (
+        "", "cidade de", "remoto", "remota", "remote", "fully remote",
+        "home office", "remoto em", "remota em", "remote in",
+        "hibrido", "hibrido em", "presencial", "presencial em", "on-site",
+    ):
+        return False
+
+    sufixo = texto[cidade.end():]
+    partes = [parte.strip() for parte in re.split(r"[,/()\-–—|·]", sufixo) if parte.strip()]
+    complementos = {
+        "sp", "sao paulo", "guarulhos", "br", "brasil", "brazil",
+        "remoto", "remota", "remote", "home office", "hibrido", "presencial",
+        "zona norte", "zona sul", "zona leste", "zona oeste", "centro",
+        "state of sao paulo", "e sao paulo", "e guarulhos",
+    }
+    return all(parte in complementos for parte in partes)
+
+
 @dataclass
 class RegrasFiltro:
     """Agrupa as 6 regras que Job.combina_com() usa pra decidir se uma vaga
@@ -940,6 +970,7 @@ class Job:
         recalcular por conta própria (ver MEDIDO em _Avaliacao)."""
         if regras.apenas_estagio:
             titulo_norm = _normalizar(self.titulo)
+            cidade_valida = _local_em_cidades(self.local, regras.cidades)
             cargo_sobre_estagio = bool(
                 re.search(
                     r"(?<!\w)(?:monitor(?:a)?|coordenador(?:a)?|supervisor(?:a)?|"
@@ -953,13 +984,13 @@ class Job:
                 )
             )
             return _Avaliacao(
-                aprovada=self.senioridade == "Estágio" and not cargo_sobre_estagio,
+                aprovada=self.senioridade == "Estágio" and not cargo_sobre_estagio and cidade_valida,
                 bate_forte=False,
                 bate_ambiguo=False,
                 bate_ferramenta=False,
                 bate_remoto=False,
                 escopos=set(),
-                mercado_confirmado=False,
+                mercado_confirmado=cidade_valida,
                 idioma_bateu_titulo=False,
             )
 

@@ -158,13 +158,12 @@ CASOS_COMBINA_COM = [
     # país hispanofalante já é o próprio sinal.
     ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", REGRAS_IDIOMA, True),
 
-    # Perfil ativo: só o nível de estágio importa; área, local e modalidade
-    # não restringem a vaga.
-    ("estagio-no-exterior-passa", "Estágio em QA", "Nova York", "Presencial", PERFIL_BR.regras, True),
+    # Perfil ativo: qualquer área e modalidade, somente São Paulo/Guarulhos.
+    ("estagio-no-exterior-barrado", "Estágio em QA", "Nova York", "Presencial", PERFIL_BR.regras, False),
     ("cargo-sem-estagio-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
-    ("estagio-cidade-brasileira-passa", "Estágio em QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
-    ("estagio_sem_area_passa", "Estágio", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
-    ("estagiaria_com_area_passa", "Estagiária de QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
+    ("estagio-outra-cidade-brasileira-barrado", "Estágio em QA", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
+    ("estagio-sem-area-sao-paulo-passa", "Estágio", "São Paulo, SP", "Presencial", PERFIL_BR.regras, True),
+    ("estagiaria-guarulhos-passa", "Estagiária de QA", "Guarulhos, SP", "Híbrido", PERFIL_BR.regras, True),
 ]
 
 

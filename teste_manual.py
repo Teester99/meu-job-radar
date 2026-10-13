@@ -43,7 +43,11 @@ def _diagnostico(v, regras):
         return f"APROVADA ({v.relevancia}/10) - {motivo}"
 
     if regras.apenas_estagio:
-        return "REPROVADA - título não indica estágio"
+        if v.senioridade != "Estágio":
+            return "REPROVADA - título não indica estágio"
+        if not av.mercado_confirmado:
+            return "REPROVADA - local fora de São Paulo ou Guarulhos"
+        return "REPROVADA - título não oferece vaga de estágio"
 
     razoes = []
     if regras.exigir_estagio and v.senioridade != "Estágio":
@@ -108,7 +112,7 @@ def main():
         "--perfil",
         required=True,
         choices=sorted(PERFIS.keys()),
-        help="Perfil de estágios de qualquer área e local (chave histórica: brasil).",
+        help="Perfil de estágios em São Paulo e Guarulhos (chave histórica: brasil).",
     )
     parser.add_argument(
         "--fonte",

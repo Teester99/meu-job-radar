@@ -52,11 +52,11 @@ pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-Crie `.env` na raiz:
+Copie `.env.example` para `.env` na raiz e preencha os dois valores:
 
 ```env
-TELEGRAM_BOT_TOKEN=<token do bot>
-TELEGRAM_CHAT_ID=<id do chat>
+TELEGRAM_BOT_TOKEN=<token do BotFather>
+TELEGRAM_CHAT_ID=<id do chat que receberá as mensagens>
 ```
 
 Um ciclo:

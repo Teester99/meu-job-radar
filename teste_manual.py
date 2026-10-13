@@ -42,6 +42,9 @@ def _diagnostico(v, regras):
             return f"APROVADA ({v.relevancia}/10) - {motivo} - escopo: {mercado}"
         return f"APROVADA ({v.relevancia}/10) - {motivo}"
 
+    if regras.apenas_estagio:
+        return "REPROVADA - título não indica estágio"
+
     razoes = []
     if regras.exigir_estagio and v.senioridade != "Estágio":
         razoes.append("título não indica estágio")
@@ -105,7 +108,7 @@ def main():
         "--perfil",
         required=True,
         choices=sorted(PERFIS.keys()),
-        help="Perfil de estágios no Brasil.",
+        help="Perfil de estágios de qualquer área e local (chave histórica: brasil).",
     )
     parser.add_argument(
         "--fonte",
@@ -114,7 +117,7 @@ def main():
     parser.add_argument(
         "--termos",
         nargs="+",
-        help="Termos de busca (substitui os do perfil). Ex: 'estágio dados' 'estágio fintech'.",
+        help="Termos de busca (substitui os do perfil). Ex: 'estágio' 'estagiaria'.",
     )
     args = parser.parse_args()
 

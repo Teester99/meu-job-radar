@@ -71,14 +71,10 @@ def _e_remoto(texto: str) -> bool:
     return any(termo in texto for termo in TERMOS_REMOTO)
 
 
-# Vocabulário que, no TÍTULO da vaga, contradiz "remoto" — usado pra não
-# confiar cegamente em fonte com filtro nativo de remoto (f_WT=2 do
-# LinkedIn) quando ela diverge do próprio anúncio. MEDIDO em produção: 1
-# de 81 vagas internacionais veio com modalidade=Remoto (via f_WT=2, o
-# LinkedIn classificou como remota) mas o título dizia "Data Analyst
-# (Analista de Datos) - Hybrid" — o filtro do próprio LinkedIn às vezes
-# diverge do anúncio real. Como o perfil internacional só quer remoto de
-# verdade, o título vence quando contradiz a classificação da fonte.
+# Vocabulário que, no TÍTULO da vaga, contradiz "remoto" — usado quando a
+# modalidade informada pela fonte diverge do próprio anúncio. Já ocorreu com
+# um título "Data Analyst (Analista de Datos) - Hybrid" marcado como remoto.
+# O título vence quando contradiz a classificação da fonte.
 _TERMOS_TITULO_HIBRIDO = ["hybrid", "hibrido"]
 _TERMOS_TITULO_PRESENCIAL = ["on-site", "onsite", "on site", "presencial"]
 
@@ -469,8 +465,8 @@ def extrair_escopo_remoto(texto_local: str, modalidade: str = "") -> set[str]:
 
     MEDIDO: desde que modalidade virou campo próprio do Job (scraper não
     escreve mais "Remoto" dentro de `local`), toda essa extração ficava
-    inalcançável pra fonte com filtro nativo — LinkedIn (f_WT=2) e
-    WeWorkRemotely confirmam via `modalidade`, não mais via texto, então
+    inalcançável pra fontes que confirmam remoto via `modalidade`, sem
+    escrever esse termo no texto do local, então
     `local` chega aqui como só "New York, NY" ou "Bangalore, India", sem a
     raiz "remot" nenhuma. Sem o parâmetro `modalidade`, _PADRAO_ESCOPO_SEPARADOR
     nunca casava e a função devolvia conjunto vazio (sem restrição) pra
@@ -696,6 +692,7 @@ class RegrasFiltro:
     idiomas_exigidos: list[str] | None = None
     exigir_estagio: bool = False
     aceitar_todo_brasil: bool = False
+    apenas_estagio: bool = False
 
 
 @dataclass
@@ -901,19 +898,17 @@ class Job:
         no WeWorkRemotely), então não tem base nenhuma pra derivar escopo
         dali, mesmo com modalidade="Remoto".
 
-        Passa `self.modalidade` junto: fonte com filtro nativo (LinkedIn
-        f_WT=2) confirma remoto por esse campo, não mais escrevendo
-        "Remoto" dentro de `local` — sem isso, extrair_escopo_remoto nunca
-        achava o separador "remot..." no texto e devolvia conjunto vazio
-        (sem restrição) pra vaga remota confirmada, mesmo vinda dos
-        EUA/Índia/etc.
+        Passa `self.modalidade` junto: algumas fontes confirmam remoto por
+        esse campo sem escrever "Remoto" dentro de `local`. Sem isso,
+        extrair_escopo_remoto devolveria conjunto vazio para qualquer
+        vaga remota confirmada, mesmo vinda dos EUA/Índia/etc.
         """
         if self.escopo_indefinido:
             return set()
         return extrair_escopo_remoto(self.local, self.modalidade)
 
     def combina_com(self, regras: RegrasFiltro) -> bool:
-        """Verifica se a vaga bate com pelo menos uma keyword E uma cidade/modalidade.
+        """Aplica as regras de cargo e local ou, no perfil amplo, só estágio.
 
         Cargo e localização são checados em campos separados (título e local,
         respectivamente) — antes eram concatenados num texto só, o que causava
@@ -943,6 +938,31 @@ class Job:
         """Faz a conta completa uma vez só — combina_com() e
         pontuar_relevancia() leem o mesmo resultado, em vez de cada um
         recalcular por conta própria (ver MEDIDO em _Avaliacao)."""
+        if regras.apenas_estagio:
+            titulo_norm = _normalizar(self.titulo)
+            cargo_sobre_estagio = bool(
+                re.search(
+                    r"(?<!\w)(?:monitor(?:a)?|coordenador(?:a)?|supervisor(?:a)?|"
+                    r"orientador(?:a)?|professor(?:a)?|gestor(?:a)?|analista)\s+"
+                    r"(?:de\s+)?estagios?(?!\w)",
+                    titulo_norm,
+                )
+                or re.search(
+                    r"(?<!\w)internship\s+(?:program\s+)?(?:coordinator|manager|advisor)(?!\w)",
+                    titulo_norm,
+                )
+            )
+            return _Avaliacao(
+                aprovada=self.senioridade == "Estágio" and not cargo_sobre_estagio,
+                bate_forte=False,
+                bate_ambiguo=False,
+                bate_ferramenta=False,
+                bate_remoto=False,
+                escopos=set(),
+                mercado_confirmado=False,
+                idioma_bateu_titulo=False,
+            )
+
         titulo_norm = _normalizar(self.titulo)
         local_norm = _normalizar(self.local)
         modalidade_norm = _normalizar(self.modalidade)
@@ -966,7 +986,11 @@ class Job:
             )):
                 mercados_locais = {"Global"}
             cidade_conhecida = any(
-                _normalizar(c) == local_norm
+                local_norm in (
+                    _normalizar(c),
+                    f"greater {_normalizar(c)}",
+                    f"greater {_normalizar(c)} area",
+                )
                 for c in regras.cidades
                 if _normalizar(c) not in ("remoto", "remota", "remote")
             )
@@ -1143,6 +1167,9 @@ class Job:
           explicitamente (sinal direto, não só herdado do mercado); 0 caso
           contrário.
         """
+        if regras.apenas_estagio:
+            return 7  # pontuação uniforme: nenhuma área, cidade ou modalidade pesa mais
+
         av = self._avaliar(regras)
 
         if av.bate_forte:
@@ -1200,6 +1227,9 @@ class Job:
         idioma apareceu no título — o caminho mais frágil dos três (ver
         MEDIDO no item 03: foi exatamente esse caminho que deixava passar
         vaga sem relação nenhuma com o mercado antes da correção)."""
+        if regras.apenas_estagio:
+            return "Estágio"
+
         av = self._avaliar(regras)
         if av.bate_forte:
             motivo = "Cargo forte"

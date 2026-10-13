@@ -158,17 +158,13 @@ CASOS_COMBINA_COM = [
     # país hispanofalante já é o próprio sinal.
     ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", REGRAS_IDIOMA, True),
 
-    # Perfil Brasil: cargo e cidade são checados em campos separados
-    # (título vs. local) — cidade fora da lista aceita barra mesmo com
-    # cargo batendo.
-    ("cidade-estrangeira-barrada", "Estágio em QA", "Nova York", "Presencial", PERFIL_BR.regras, False),
-    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
+    # Perfil ativo: só o nível de estágio importa; área, local e modalidade
+    # não restringem a vaga.
+    ("estagio-no-exterior-passa", "Estágio em QA", "Nova York", "Presencial", PERFIL_BR.regras, True),
+    ("cargo-sem-estagio-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
     ("estagio-cidade-brasileira-passa", "Estágio em QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
-    # keywords_ambiguo (ex: "Analista de Qualidade") só conta com qualificador
-    # de dados junto no título — sozinho é ruído de outra área (RH,
-    # finanças).
-    ("cargo-ambiguo-sem-qualificador-barrado", "Estágio", "Recife, PE", "Presencial", PERFIL_BR.regras, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Estagiária de QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
+    ("estagio_sem_area_passa", "Estágio", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
+    ("estagiaria_com_area_passa", "Estagiária de QA", "Recife, PE", "Presencial", PERFIL_BR.regras, True),
 ]
 
 

@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
 from config import DIGEST_HORA_UTC, INTERVALO_MINUTOS, LIMIAR_DIGEST_IMEDIATO
+from job import Job
 from database.database import (
     BancoVazioSuspeito,
     definir_metadado,
@@ -29,6 +30,12 @@ from utils.filtro import filtrar_vagas
 from logger import get_logger
 
 logger = get_logger()
+
+
+def _notificar_na_hora(vaga: Job, perfil: Perfil) -> bool:
+    if perfil.regras.apenas_estagio:
+        return True
+    return vaga.relevancia >= LIMIAR_DIGEST_IMEDIATO and not vaga.publicacao_antiga
 
 
 def _fontes_baixa_frequencia_ja_rodaram_hoje(perfil: Perfil) -> bool:
@@ -256,25 +263,9 @@ def ciclo_de_busca(perfil: Perfil):
                 if ja_vista(vaga):
                     continue
 
-                # Item 08: só notifica na hora quando a relevância passa do
-                # limiar (ver LIMIAR_DIGEST_IMEDIATO em config.py) — abaixo
-                # disso, vai pra fila do digest diário sem mensagem
-                # individual (ver _enviar_digest_diario). Fila é salvar com
-                # digest_pendente=True: não tem "notificação que pode
-                # falhar" nesse caminho (a mensagem só sai no digest, depois),
-                # então salvar direto não arrisca perder a vaga do jeito que
-                # salvar ANTES de notificar arriscava no caminho imediato.
-                #
-                # MEDIDO: vaga com Job.publicacao_antiga (publicado_em "há X
-                # meses/anos" — ver job.py) nunca vai pra notificação
-                # imediata, mesmo com relevância alta — score mede "bate com
-                # o que você procura", não "é recente". Site com pouco
-                # volume pra um termo deixa vaga de meses atrás na página
-                # visível (confirmado ao vivo: Sólides ordena por data, mas
-                # sem volume novo suficiente a antiga não sai da 1ª página).
-                # Não é descartada (mesma vaga ainda pode estar aberta) — só
-                # sai do caminho "🚨 urgente" e vai pro digest em lote.
-                if vaga.relevancia >= LIMIAR_DIGEST_IMEDIATO and not vaga.publicacao_antiga:
+                # No perfil amplo, cada estágio novo gera alerta imediato.
+                # As regras legadas ainda usam limiar e idade para o digest.
+                if _notificar_na_hora(vaga, perfil):
                     # Notifica ANTES de salvar. Se salvasse primeiro e o
                     # Telegram falhasse, a vaga ficava marcada como "vista"
                     # pra sempre — o próximo ciclo pulava ela em ja_vista()
@@ -303,8 +294,7 @@ def ciclo_de_busca(perfil: Perfil):
                 if ja_vista(vaga):
                     continue
 
-                # Mesma regra de vaga antiga do loop acima.
-                if vaga.relevancia >= LIMIAR_DIGEST_IMEDIATO and not vaga.publicacao_antiga:
+                if _notificar_na_hora(vaga, perfil):
                     if not notificar_vaga_exploratoria(vaga):
                         logger.warning(
                             f"[{perfil.nome}] Falha ao notificar '{vaga.titulo}' (exploratória) - "
@@ -395,14 +385,14 @@ def _rodar_um_ciclo_de_cada(perfis: list[Perfil]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="JobRadar - estágios no Brasil")
+    parser = argparse.ArgumentParser(description="JobRadar - estágios de qualquer área e local")
     parser.add_argument(
         "--perfil",
         default=["brasil"],
         nargs="+",
         choices=sorted(PERFIS.keys()),
         help=(
-            "Perfil de busca: brasil (padrão), para estágios em exatas, fintech e tecnologia."
+            "Perfil de busca: brasil (chave histórica), para estágios de qualquer área e local."
         ),
     )
     parser.add_argument(

@@ -8,6 +8,7 @@ from database.database import definir_feedback, definir_metadado, obter_metadado
 from logger import get_logger
 
 logger = get_logger()
+_sessao_telegram = requests.Session()
 
 
 def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
@@ -30,7 +31,7 @@ def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
         payload["reply_markup"] = json.dumps(reply_markup)
 
     try:
-        resposta = requests.post(url, data=payload, timeout=10)
+        resposta = _sessao_telegram.post(url, data=payload, timeout=10)
         resposta.raise_for_status()
         return True
     # MEDIDO: logar a exceção direta (`{e}`) põe a URL inteira no log —
@@ -92,9 +93,8 @@ def _teclado_feedback(job_id: str) -> dict:
 def _linha_aviso_antiga(job) -> str:
     """Aviso quando Job.publicacao_antiga é True (publicado_em bate "há X
     meses/anos") — a vaga ainda passou no filtro e está sendo notificada
-    (ver main.py: só muda pra digest em vez de imediata, nunca é
-    descartada — "duplicar/mostrar é aceitável, perder não" é o mesmo
-    princípio do digest), mas sem essa linha a mensagem parece uma vaga
+    (ver main.py: o perfil de estágios envia imediatamente, inclusive as
+    antigas), mas sem essa linha a mensagem parece uma vaga
     fresca igual a qualquer outra, quando na real pode já estar
     preenchida há tempos."""
     if not job.publicacao_antiga:
@@ -220,7 +220,7 @@ def _chamar_api_telegram(metodo: str, payload: dict) -> dict | None:
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{metodo}"
     try:
-        resposta = requests.post(url, data=payload, timeout=10)
+        resposta = _sessao_telegram.post(url, data=payload, timeout=10)
         resposta.raise_for_status()
         return resposta.json()
     except requests.HTTPError as e:

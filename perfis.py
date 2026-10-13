@@ -1,11 +1,9 @@
-"""Perfil ativo do JobRadar: estágios no Brasil."""
+"""Perfil ativo do JobRadar: estágios de qualquer área e local."""
 
 from dataclasses import dataclass, field
 
 from config import (
-    KEYWORDS, KEYWORDS_CARGO_FORTE, KEYWORDS_CARGO_AMBIGUO,
-    QUALIFICADORES_DADOS, FERRAMENTAS_TITULO, QUALIFICADORES_CARGO,
-    CIDADES, MERCADOS_REMOTO_ACEITOS, TERMOS_BUSCA, TERMOS_POR_CICLO,
+    MARCADORES_ESTAGIO, TERMOS_BUSCA, TERMOS_POR_CICLO,
 )
 from job import RegrasFiltro
 from scrapers.catho import CathoScraper
@@ -44,20 +42,21 @@ class Perfil:
 
 
 PERFIL_BR = Perfil(
+    # Chave histórica mantida para preservar deduplicação e digest no jobs.db.
     chave="brasil",
-    nome="Brasil",
-    palavras_monitoradas=KEYWORDS,
-    paises_pesquisados=["Brasil"],
+    nome="Estágios",
+    palavras_monitoradas=MARCADORES_ESTAGIO,
+    paises_pesquisados=None,
     regras=RegrasFiltro(
-        keywords_forte=KEYWORDS_CARGO_FORTE,
-        keywords_ambiguo=KEYWORDS_CARGO_AMBIGUO,
-        qualificadores_dados=QUALIFICADORES_DADOS,
-        ferramentas_titulo=FERRAMENTAS_TITULO,
-        qualificadores_cargo=QUALIFICADORES_CARGO,
-        cidades=CIDADES,
-        mercados_remoto_aceitos=MERCADOS_REMOTO_ACEITOS,
+        keywords_forte=[],
+        keywords_ambiguo=[],
+        qualificadores_dados=[],
+        ferramentas_titulo=[],
+        qualificadores_cargo=[],
+        cidades=[],
+        mercados_remoto_aceitos=None,
         exigir_estagio=True,
-        aceitar_todo_brasil=True,
+        apenas_estagio=True,
     ),
     regras_eixo_secundario=None,
     eixo_secundario_ativo=False,

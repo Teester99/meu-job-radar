@@ -18,6 +18,7 @@ O JobRadar consulta fontes públicas de vagas a cada três horas, seleciona anú
 - LinkedIn e Indeed pesquisam as duas cidades separadamente, sem restringir modalidade. Nas demais fontes, o local de cada anúncio é validado depois da busca.
 - O título precisa indicar estágio. Cargos efetivos, trainee isolado e aprendiz sem indicação de estágio são descartados.
 - Área e modalidade presencial, híbrida ou remota não influenciam a aprovação. O local precisa indicar uma das duas cidades; região metropolitana, estado ou país sem cidade específica não bastam.
+- Divergências conhecidas entre o título e o local do card, como Várzea Paulista rotulada como São Paulo, devem ser rejeitadas.
 - A classificação de estágio deve reconhecer formas masculinas, femininas, plurais e equivalentes em inglês sem aceitar palavras como `internal` por engano.
 
 ## 3. Notificação e histórico

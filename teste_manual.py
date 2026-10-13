@@ -47,7 +47,7 @@ def _diagnostico(v, regras):
             return "REPROVADA - título não indica estágio"
         if not av.mercado_confirmado:
             return "REPROVADA - local fora de São Paulo ou Guarulhos"
-        return "REPROVADA - título não oferece vaga de estágio"
+        return "REPROVADA - título não oferece vaga de estágio ou indica outra cidade"
 
     razoes = []
     if regras.exigir_estagio and v.senioridade != "Estágio":

@@ -3,7 +3,8 @@
 from dataclasses import dataclass, field
 
 from config import (
-    CIDADES_ALVO, LOCALIDADES_BUSCA, MARCADORES_ESTAGIO, TERMOS_BUSCA, TERMOS_POR_CICLO,
+    CIDADES_ALVO, CIDADES_TITULO_CONFLITANTE, LOCALIDADES_BUSCA,
+    MARCADORES_ESTAGIO, TERMOS_BUSCA, TERMOS_POR_CICLO,
 )
 from job import RegrasFiltro
 from scrapers.catho import CathoScraper
@@ -57,6 +58,7 @@ PERFIL_BR = Perfil(
         mercados_remoto_aceitos=None,
         exigir_estagio=True,
         apenas_estagio=True,
+        cidades_titulo_conflitante=CIDADES_TITULO_CONFLITANTE,
     ),
     regras_eixo_secundario=None,
     eixo_secundario_ativo=False,

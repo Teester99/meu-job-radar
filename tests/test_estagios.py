@@ -62,6 +62,14 @@ def test_rejeita_outros_locais_ou_local_ambiguo(local):
     assert not vaga("Estágio em Direito", local).combina_com(PERFIL_BR.regras)
 
 
+def test_rejeita_cidade_conflitante_no_titulo_mesmo_com_card_em_sao_paulo():
+    anuncio = vaga(
+        "Estágio em Controle de Qualidade (Laboratório - Várzea Paulista)",
+        "São Paulo, São Paulo, Brazil",
+    )
+    assert not anuncio.combina_com(PERFIL_BR.regras)
+
+
 def test_score_igual_para_qualquer_area_local_e_modalidade():
     aprovadas, descartes = filtrar_vagas([
         vaga("Estágio em Dados", "São Paulo", "Presencial"),

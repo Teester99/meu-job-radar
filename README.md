@@ -10,6 +10,7 @@ Consulta sete fontes públicas a cada três horas, filtra as vagas, deduplica e 
 - Qualquer área e modalidade de trabalho, desde que o local do anúncio indique a cidade de São Paulo ou Guarulhos, no Brasil.
 
 Cargos efetivos, trainee isolado e aprendiz sem indicação de estágio no título são rejeitados.
+Um anúncio com "Várzea Paulista" no título é rejeitado mesmo quando o card o rotula como São Paulo.
 
 O escopo completo e os critérios de aceite estão em [PRD.md](PRD.md).
 

@@ -723,6 +723,7 @@ class RegrasFiltro:
     exigir_estagio: bool = False
     aceitar_todo_brasil: bool = False
     apenas_estagio: bool = False
+    cidades_titulo_conflitante: list[str] | None = None
 
 
 @dataclass
@@ -971,6 +972,10 @@ class Job:
         if regras.apenas_estagio:
             titulo_norm = _normalizar(self.titulo)
             cidade_valida = _local_em_cidades(self.local, regras.cidades)
+            cidade_conflitante = any(
+                _contem_termo(_normalizar(cidade), titulo_norm)
+                for cidade in regras.cidades_titulo_conflitante or []
+            )
             cargo_sobre_estagio = bool(
                 re.search(
                     r"(?<!\w)(?:monitor(?:a)?|coordenador(?:a)?|supervisor(?:a)?|"
@@ -984,7 +989,12 @@ class Job:
                 )
             )
             return _Avaliacao(
-                aprovada=self.senioridade == "Estágio" and not cargo_sobre_estagio and cidade_valida,
+                aprovada=(
+                    self.senioridade == "Estágio"
+                    and not cargo_sobre_estagio
+                    and not cidade_conflitante
+                    and cidade_valida
+                ),
                 bate_forte=False,
                 bate_ambiguo=False,
                 bate_ferramenta=False,

@@ -4,7 +4,7 @@ import os
 from contextlib import contextmanager
 
 from config import DB_PATH
-from job import _normalizar
+from job import Job, RegrasFiltro, _normalizar
 
 
 def _garantir_pasta():
@@ -285,7 +285,9 @@ def definir_feedback(job_id: str, feedback: str):
         )
 
 
-def obter_vagas_pendentes_digest(perfil_chave: str) -> list[tuple]:
+def obter_vagas_pendentes_digest(
+    perfil_chave: str, regras: RegrasFiltro | None = None,
+) -> list[tuple]:
     """Vagas salvas com digest_pendente=1 pra esse perfil, da mais
     relevante pra menos — ver _enviar_digest_diario em main.py. Pode
     acumular de mais de um ciclo (a cada 3h) até bater o horário do envio,
@@ -294,14 +296,30 @@ def obter_vagas_pendentes_digest(perfil_chave: str) -> list[tuple]:
     with _conectar() as conn:
         cursor = conn.execute(
             """
-            SELECT titulo, empresa, link, relevancia, exploratoria
+            SELECT titulo, empresa, link, relevancia, exploratoria, local, site, modalidade
             FROM vagas_vistas
             WHERE perfil = ? AND digest_pendente = 1
             ORDER BY relevancia DESC, encontrada_em ASC
             """,
             (perfil_chave,),
         )
-        return cursor.fetchall()
+        linhas = cursor.fetchall()
+
+    if regras is None:
+        return [linha[:5] for linha in linhas]
+
+    # Revalida o histórico pendente com o escopo atual antes de notificar.
+    # O banco é preservado; cargos efetivos e vagas internacionais antigos
+    # não escapam pelo digest depois da mudança de configuração.
+    aprovadas = []
+    for titulo, empresa, link, _, exploratoria, local, site, modalidade in linhas:
+        vaga = Job(
+            titulo=titulo or "", empresa=empresa or "", link=link or "",
+            local=local or "", site=site or "", modalidade=modalidade or "",
+        )
+        if vaga.combina_com(regras):
+            aprovadas.append((titulo, empresa, link, vaga.pontuar_relevancia(regras), exploratoria))
+    return sorted(aprovadas, key=lambda linha: -linha[3])
 
 
 def marcar_digest_enviado(perfil_chave: str):

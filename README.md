@@ -53,8 +53,12 @@ Copie `.env.example` para `.env` na raiz e preencha os dois valores:
 
 ```env
 TELEGRAM_BOT_TOKEN=<token do BotFather>
-TELEGRAM_CHAT_ID=<id do chat que receberá as mensagens>
+TELEGRAM_CHAT_ID=<id do seu chat privado (destinatário padrão)>
 ```
+
+Para outras pessoas receberem as vagas no **próprio Telegram**, compartilhe o link do bot (`https://t.me/<nome_do_bot>`). Cada pessoa precisa abrir a conversa e enviar `/start`. O cadastro é processado no próximo ciclo (até três horas) e as vagas novas passam a chegar no chat privado dela. `/stop` cancela a inscrição; `/help` mostra os comandos. O bot não envia vagas anteriores ao cadastro. O chat definido em `TELEGRAM_CHAT_ID` continua recebendo mesmo após `/stop`; para removê-lo, altere esse valor na configuração.
+
+As inscrições ficam em `data/jobs.db`, que o workflow já persiste. O feedback 👍/👎 permanece disponível só no chat configurado em `TELEGRAM_CHAT_ID`, pois o banco guarda uma única reação por vaga. Se o bot for usado em grupo, esta inscrição por comando não se aplica: o cadastro exige uma conversa privada.
 
 Um ciclo:
 

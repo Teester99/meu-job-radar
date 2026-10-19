@@ -1,17 +1,11 @@
-"""Testes da camada de notificação (notifier/telegram.py) que não dependem
-de rede — parsing de callback_data e montagem de teclado inline, a parte
-nova do fluxo de feedback 👍/👎 (ver processar_feedback_pendente).
-
-Chamada de rede de verdade (sendMessage/getUpdates/answerCallbackQuery)
-não é testável aqui: o sandbox não alcança api.telegram.org (proxy do
-ambiente bloqueia, já diagnosticado nesta sessão). O que é função pura —
-_parsear_callback_data e _teclado_feedback — é testado isolado, sem mock
-nenhum.
-"""
+"""Feedback e inscrição no Telegram, com a API simulada e banco temporário."""
 
 import pytest
+import requests
 
 from notifier.telegram import _parsear_callback_data, _teclado_feedback
+from database import database as db
+from notifier import telegram
 
 _ID_EXEMPLO = "d41d8cd98f00b204e9800998ecf8427e"  # md5 de exemplo, 32 chars
 
@@ -66,3 +60,72 @@ def test_ida_e_volta_teclado_para_parser():
 
     assert _parsear_callback_data(botao_positivo["callback_data"]) == (_ID_EXEMPLO, "positivo")
     assert _parsear_callback_data(botao_negativo["callback_data"]) == (_ID_EXEMPLO, "negativo")
+
+
+def test_inscricao_e_cancelamento_recebem_apenas_vagas_futuras(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(telegram, "TELEGRAM_BOT_TOKEN", "token-de-teste")
+    monkeypatch.setattr(telegram, "TELEGRAM_CHAT_ID", "100")
+    db.iniciar_db()
+    enviados = []
+    monkeypatch.setattr(telegram, "_enviar_para_chat", lambda chat, texto, markup=None: enviados.append((chat, texto, markup)) or True)
+
+    updates = [
+        {"update_id": 1, "message": {"chat": {"id": 200, "type": "private"}, "text": "/start"}},
+        {"update_id": 2, "message": {"chat": {"id": -300, "type": "supergroup"}, "text": "/start"}},
+    ]
+    def get_updates(_metodo, payload):
+        offset = int(payload.get("offset", 0))
+        return {"ok": True, "result": [u for u in updates if u["update_id"] >= offset]}
+
+    monkeypatch.setattr(telegram, "_chamar_api_telegram", get_updates)
+    telegram.processar_feedback_pendente()
+    assert db.obter_assinantes_telegram() == ["200"]
+    assert db.obter_metadado("telegram_update_offset") == "2"
+    enviados.clear()
+    assert telegram.enviar_mensagem("vaga", reply_markup={"inline_keyboard": []})
+    assert [chat for chat, _, _ in enviados] == ["100", "200"]
+    assert enviados[0][2] == {"inline_keyboard": []}
+    assert enviados[1][2] is None
+
+    updates.append({"update_id": 3, "message": {"chat": {"id": 200, "type": "private"}, "text": "/stop"}})
+    telegram.processar_feedback_pendente()
+    assert db.obter_assinantes_telegram() == []
+    enviados.clear()
+    assert telegram.enviar_mensagem("outra vaga")
+    assert [chat for chat, _, _ in enviados] == ["100"]
+
+
+def test_falha_de_um_assinante_nao_pula_os_outros(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(telegram, "TELEGRAM_BOT_TOKEN", "token-de-teste")
+    monkeypatch.setattr(telegram, "TELEGRAM_CHAT_ID", "100")
+    db.iniciar_db()
+    db.definir_assinatura_telegram("200", True)
+    db.definir_assinatura_telegram("300", True)
+    enviados = []
+    def enviar(chat, _texto, _markup=None):
+        enviados.append(chat)
+        return chat != "200"
+
+    monkeypatch.setattr(telegram, "_enviar_para_chat", enviar)
+    assert not telegram.enviar_mensagem("vaga")
+    assert enviados == ["100", "200", "300"]
+
+
+def test_chat_que_bloqueou_o_bot_sai_da_lista(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(telegram, "TELEGRAM_BOT_TOKEN", "token-de-teste")
+    monkeypatch.setattr(telegram, "TELEGRAM_CHAT_ID", "100")
+    db.iniciar_db()
+    db.definir_assinatura_telegram("200", True)
+
+    def post(_url, data, timeout):
+        resposta = requests.Response()
+        resposta.status_code = 403 if data["chat_id"] == "200" else 200
+        resposta.reason = "Forbidden" if resposta.status_code == 403 else "OK"
+        return resposta
+
+    monkeypatch.setattr(telegram._sessao_telegram, "post", post)
+    assert telegram.enviar_mensagem("vaga")
+    assert db.obter_assinantes_telegram() == []

@@ -186,6 +186,12 @@ def iniciar_db():
                 valor TEXT
             )
         """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS assinantes_telegram (
+                chat_id TEXT PRIMARY KEY,
+                ativo INTEGER NOT NULL DEFAULT 1
+            )
+        """)
         total_vagas = conn.execute("SELECT COUNT(*) FROM vagas_vistas").fetchone()[0]
 
     # Se o arquivo já existia com conteúdo mas a tabela veio vazia, não é
@@ -233,6 +239,22 @@ def definir_metadado(chave: str, valor: str):
             "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
             (chave, valor),
         )
+
+
+def definir_assinatura_telegram(chat_id: str, ativo: bool):
+    with _conectar() as conn:
+        conn.execute(
+            "INSERT INTO assinantes_telegram (chat_id, ativo) VALUES (?, ?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET ativo = excluded.ativo",
+            (chat_id, int(ativo)),
+        )
+
+
+def obter_assinantes_telegram() -> list[str]:
+    with _conectar() as conn:
+        return [linha[0] for linha in conn.execute(
+            "SELECT chat_id FROM assinantes_telegram WHERE ativo = 1 ORDER BY chat_id"
+        )]
 
 
 def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, exploratoria: bool = False):

@@ -4,22 +4,20 @@ import json
 import requests
 
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from database.database import definir_feedback, definir_metadado, obter_metadado
+from database.database import (
+    definir_assinatura_telegram, definir_feedback, definir_metadado,
+    obter_assinantes_telegram, obter_metadado,
+)
 from logger import get_logger
 
 logger = get_logger()
 _sessao_telegram = requests.Session()
 
 
-def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        logger.warning("Telegram não configurado (token/chat_id ausentes no .env). Pulando envio.")
-        return False
-
+def _enviar_para_chat(chat_id: str, texto: str, reply_markup: dict | None = None) -> bool:
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
     payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
+        "chat_id": chat_id,
         "text": texto,
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
@@ -48,14 +46,38 @@ def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
     except requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else None
         motivo = e.response.reason if e.response is not None else "sem detalhe"
-        logger.error(f"Erro ao enviar mensagem no Telegram: HTTP {status} ({motivo})")
+        logger.error(f"Erro ao enviar mensagem ao chat {chat_id}: HTTP {status} ({motivo})")
+        if status == 403 and chat_id != str(TELEGRAM_CHAT_ID):
+            definir_assinatura_telegram(chat_id, False)
+            return True  # chat bloqueou o bot; não impede a vaga de ser salva
         return False
     except requests.RequestException as e:
         logger.error(
-            f"Erro ao enviar mensagem no Telegram: {type(e).__name__} "
+            f"Erro ao enviar mensagem ao chat {chat_id}: {type(e).__name__} "
             "(falha de conexão, sem resposta do servidor)"
         )
         return False
+
+
+def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
+    """Entrega a todos os chats ativos. O feedback continua exclusivo do dono."""
+    if not TELEGRAM_BOT_TOKEN:
+        logger.warning("Telegram não configurado (token ausente). Pulando envio.")
+        return False
+
+    destinatarios = set(obter_assinantes_telegram())
+    if TELEGRAM_CHAT_ID:
+        destinatarios.add(str(TELEGRAM_CHAT_ID))
+    if not destinatarios:
+        logger.warning("Nenhum destinatário do Telegram cadastrado.")
+        return False
+
+    sucesso = True
+    for chat_id in sorted(destinatarios):
+        teclado = reply_markup if chat_id == str(TELEGRAM_CHAT_ID) else None
+        if not _enviar_para_chat(chat_id, texto, teclado):
+            sucesso = False
+    return sucesso
 
 
 def _linha_relevancia(pontos: int) -> str:
@@ -253,7 +275,7 @@ _OFFSET_CHAVE = "telegram_update_offset"
 
 
 def processar_feedback_pendente():
-    """Consome os cliques em 👍/👎 desde o último ciclo. Sem webhook, sem
+    """Consome inscrições privadas e cliques em 👍/👎 desde o último ciclo. Sem webhook, sem
     servidor próprio — o cron de 3 em 3 horas do projeto (ver
     .github/workflows/jobradar.yml) já FAZ o papel de polling: cada
     execução pergunta ao Telegram "o que mudou desde a última vez que eu
@@ -265,13 +287,13 @@ def processar_feedback_pendente():
     próprio Telegram que tudo até N já foi visto — sem isso, o mesmo
     clique seria reprocessado em todo ciclo daqui pra frente.
     """
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
         return
 
     payload = {
         "timeout": 0,  # short poll -- só pergunta "tem algo pendente agora", não fica esperando
         "limit": 100,
-        "allowed_updates": json.dumps(["callback_query"]),
+        "allowed_updates": json.dumps(["message", "callback_query"]),
     }
     offset_salvo = obter_metadado(_OFFSET_CHAVE)
     if offset_salvo:
@@ -291,12 +313,29 @@ def processar_feedback_pendente():
         if update_id is not None:
             maior_update_id = update_id if maior_update_id is None else max(maior_update_id, update_id)
 
+        mensagem_recebida = update.get("message") or {}
+        chat = mensagem_recebida.get("chat") or {}
+        chat_id_comando = str(chat.get("id", ""))
+        if chat_id_comando and chat.get("type") == "private":
+            primeira_palavra = (mensagem_recebida.get("text") or "").split(maxsplit=1)
+            comando = primeira_palavra[0].split("@", 1)[0].lower() if primeira_palavra else ""
+            if comando == "/start":
+                definir_assinatura_telegram(chat_id_comando, True)
+                _enviar_para_chat(chat_id_comando, "✅ Inscrição ativa. Você receberá as próximas vagas de estágio. Use /stop para sair.")
+            elif comando == "/stop":
+                definir_assinatura_telegram(chat_id_comando, False)
+                if chat_id_comando == str(TELEGRAM_CHAT_ID):
+                    _enviar_para_chat(chat_id_comando, "Este chat está definido em TELEGRAM_CHAT_ID e continuará recebendo vagas até a configuração ser alterada.")
+                else:
+                    _enviar_para_chat(chat_id_comando, "Inscrição cancelada. Use /start para receber vagas novamente.")
+            elif comando == "/help":
+                _enviar_para_chat(chat_id_comando, "Use /start para receber vagas de estágio e /stop para cancelar.")
+
         callback = update.get("callback_query")
         if not callback:
             continue
 
-        # Só processa callback do chat configurado -- mesmo escopo de "bot
-        # de uso pessoal, um chat só" que o resto do projeto assume.
+        # O feedback no banco é único por vaga; só o dono recebe os botões.
         mensagem = callback.get("message") or {}
         chat_id = str((mensagem.get("chat") or {}).get("id", ""))
         if not chat_id or chat_id != str(TELEGRAM_CHAT_ID):

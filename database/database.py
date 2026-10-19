@@ -7,6 +7,9 @@ from config import DB_PATH
 from job import Job, RegrasFiltro, _normalizar
 
 
+_CHAVE_REINICIO_VAGAS = "vagas_historico_reiniciado"
+
+
 def _garantir_pasta():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
@@ -193,14 +196,17 @@ def iniciar_db():
             )
         """)
         total_vagas = conn.execute("SELECT COUNT(*) FROM vagas_vistas").fetchone()[0]
+        reinicio_intencional = conn.execute(
+            "SELECT 1 FROM metadados WHERE chave = ?", (_CHAVE_REINICIO_VAGAS,)
+        ).fetchone() is not None
 
     # Se o arquivo já existia com conteúdo mas a tabela veio vazia, não é
     # primeiro uso — é banco sumido/corrompido/resetado (checkout falhou,
     # commit ruim, etc.). Se o ciclo seguisse normal, TODA vaga encontrada
     # bateria "não vista" e o sistema notificaria centenas de vagas antigas
     # de uma vez, de repente. Primeiro uso de verdade (arquivo nunca
-    # existiu) não cai aqui — tabela vazia nesse caso é esperada.
-    if arquivo_ja_existia and total_vagas == 0:
+    # existiu) e reinício autorizado pelo marcador não caem aqui.
+    if arquivo_ja_existia and total_vagas == 0 and not reinicio_intencional:
         raise BancoVazioSuspeito(
             f"{DB_PATH} já existia em disco (tinha conteúdo) mas a tabela "
             "vagas_vistas veio vazia — sinal de banco perdido, corrompido ou "
@@ -257,6 +263,24 @@ def obter_assinantes_telegram() -> list[str]:
         )]
 
 
+def reiniciar_historico_vagas() -> int:
+    """Zera somente vagas vistas; mantém assinantes e metadados do bot.
+
+    O marcador diferencia esse reset de uma perda acidental do banco até a
+    primeira vaga nova ser salva. A operação inteira é uma transação.
+    """
+    iniciar_db()
+    with _conectar() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM vagas_vistas").fetchone()[0]
+        conn.execute("DELETE FROM vagas_vistas")
+        conn.execute(
+            "INSERT INTO metadados (chave, valor) VALUES (?, '1') "
+            "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+            (_CHAVE_REINICIO_VAGAS,),
+        )
+        return total
+
+
 def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, exploratoria: bool = False):
     """`digest_pendente=True` marca a vaga como ainda não notificada —
     entrou na fila do digest diário (ver _enviar_digest_diario em main.py)
@@ -266,7 +290,7 @@ def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, expl
     rodar brasil+internacional na mesma execução misturaria a fila dos
     dois."""
     with _conectar() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT OR IGNORE INTO vagas_vistas
                 (id, titulo, empresa, local, link, site, chave_secundaria, publicado_em,
@@ -279,6 +303,8 @@ def salvar_vaga(job, perfil_chave: str = "", digest_pendente: bool = False, expl
                 job.relevancia, perfil_chave, int(digest_pendente), int(exploratoria), "nova",
             ),
         )
+        if cursor.rowcount:
+            conn.execute("DELETE FROM metadados WHERE chave = ?", (_CHAVE_REINICIO_VAGAS,))
 
 
 def definir_situacao(id_ou_link: str, situacao: str):

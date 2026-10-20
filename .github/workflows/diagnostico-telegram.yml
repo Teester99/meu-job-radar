@@ -1,0 +1,148 @@
+name: Diagnostico Telegram
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias do diagnostico
+        run: python -m pip install requests==2.34.2 python-dotenv==1.2.2
+      - name: Verificar bot e inscricoes
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PYTHON'
+          """Execute na raiz do meu-job-radar: python diagnostico_telegram.py.
+          
+          Usa o token do ambiente/.env. Não envia mensagens, altera o banco,
+          remove webhook ou confirma updates com offset. Não imprime dados de usuários.
+          O resultado vale para as credenciais deste ambiente, não comprova quais
+          secrets estão configurados no GitHub Actions.
+          """
+          import sqlite3
+          from pathlib import Path
+          
+          import requests
+          
+          ESPERADO = "Becca_hello_bot"
+          
+          
+          def consultar(sessao, token, metodo, payload=None):
+              try:
+                  resposta = sessao.post(
+                      f"https://api.telegram.org/bot{token}/{metodo}",
+                      data=payload or {}, timeout=15,
+                  )
+                  if not resposta.ok:
+                      print(f"{metodo}: HTTP {resposta.status_code}.")
+                      if resposta.status_code == 409:
+                          print("Conflito: verificar webhook ativo ou outro processo lendo getUpdates.")
+                      elif resposta.status_code == 401:
+                          print("Token recusado. Confira a configuração neste ambiente.")
+                      return None
+                  dados = resposta.json()
+                  if not dados.get("ok"):
+                      print(f"{metodo}: API retornou falha; nenhum dado sensível exibido.")
+                      return None
+                  return dados.get("result")
+              except (requests.RequestException, ValueError) as erro:
+                  print(f"{metodo}: {type(erro).__name__}. Tente novamente; token não exibido.")
+                  return None
+          
+          
+          def examinar_banco(caminho, chat_padrao):
+              arquivo = Path(caminho).resolve()
+              if not arquivo.is_file():
+                  print("Banco local ausente; não foi criado nem alterado.")
+                  return None
+              conexao = None
+              try:
+                  conexao = sqlite3.connect(arquivo.as_uri() + "?mode=ro", uri=True)
+                  inscritos = conexao.execute(
+                      "SELECT chat_id FROM assinantes_telegram WHERE ativo = 1"
+                  ).fetchall()
+                  outros = sum(str(chat) != str(chat_padrao) for (chat,) in inscritos)
+                  print(f"Inscrições ativas: {len(inscritos)}; fora do chat padrão: {outros}.")
+                  if not outros:
+                      print("Não há outros destinatários ativos cadastrados neste banco.")
+                  linha = conexao.execute(
+                      "SELECT valor FROM metadados WHERE chave = 'telegram_update_offset'"
+                  ).fetchone()
+                  return int(linha[0]) if linha and linha[0] else None
+              except (sqlite3.Error, ValueError):
+                  print("Não foi possível ler as inscrições/offset; confira a versão do banco.")
+                  return None
+              finally:
+                  if conexao is not None:
+                      conexao.close()
+          
+          
+          def main():
+              try:
+                  from config import DB_PATH, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+              except ImportError:
+                  print("Coloque este arquivo ao lado de config.py e instale requirements.txt.")
+                  return 1
+              print("Diagnóstico com os secrets do GitHub Actions; nenhum envio será feito.")
+              if not TELEGRAM_BOT_TOKEN:
+                  print("Token ausente neste ambiente. Não cole o token em conversas ou logs.")
+                  return 1
+              with requests.Session() as sessao:
+                  bot = consultar(sessao, TELEGRAM_BOT_TOKEN, "getMe")
+                  if not isinstance(bot, dict):
+                      return 1
+                  usuario = bot.get("username", "")
+                  if not bot.get("is_bot") or usuario.lower() != ESPERADO.lower():
+                      print(f"DIVERGÊNCIA: token não pertence ao bot esperado @{ESPERADO}.")
+                      print("Confira o token do bot correto na configuração de execução.")
+                      return 1
+                  print(f"Identidade confirmada: @{ESPERADO}.")
+                  offset = examinar_banco(DB_PATH, TELEGRAM_CHAT_ID)
+                  webhook = consultar(sessao, TELEGRAM_BOT_TOKEN, "getWebhookInfo")
+                  if not isinstance(webhook, dict):
+                      return 1
+                  if webhook.get("url"):
+                      print("Webhook ATIVO: o polling getUpdates deste projeto não pode funcionar assim.")
+                      print("Identifique o serviço que usa esse webhook antes de alterar a configuração.")
+                      return 1
+                  print("Webhook inativo.")
+                  updates = consultar(sessao, TELEGRAM_BOT_TOKEN, "getUpdates", {"timeout": 0, "limit": 100})
+                  if not isinstance(updates, list):
+                      return 1
+                  starts = 0
+                  ids = []
+                  for update in updates:
+                      if isinstance(update.get("update_id"), int):
+                          ids.append(update["update_id"])
+                      mensagem = update.get("message") or {}
+                      texto = (mensagem.get("text") or "").split(maxsplit=1)
+                      comando = texto[0].split("@", 1)[0].lower() if texto else ""
+                      if (mensagem.get("chat") or {}).get("type") == "private" and comando == "/start":
+                          starts += 1
+                  print(f"Atualizações retornadas: {len(updates)}; comandos /start privados: {starts}.")
+                  if ids and offset is not None and offset >= max(ids):
+                      print("Updates retornados estão abaixo do offset local: podem ser já processados")
+                      print("ou indicar histórico de outro bot. Não zere o banco sem investigar.")
+                  if starts:
+                      print("O Telegram recebeu /start. Verifique se o próximo ciclo cadastra esses chats.")
+                  else:
+                      print("Nenhum /start pendente neste lote. Isso não prova que nunca foi enviado.")
+                      print("Envie /start ao bot confirmado e repita antes do próximo ciclo.")
+                  print("Diagnóstico concluído. Apenas contagens e estados foram exibidos.")
+                  return 0
+          
+          
+          if __name__ == "__main__":
+              raise SystemExit(main())
+          PYTHON
